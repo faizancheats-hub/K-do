@@ -1,0 +1,11 @@
+.github/**
+.memory/**
+docs/**
+scripts/**
+tests/**
+node_modules/**
+src/**
+webview/src/**
+tsconfig.json
+esbuild.config.mjs
+vitest.config.ts
