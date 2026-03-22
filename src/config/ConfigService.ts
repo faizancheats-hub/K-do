@@ -41,6 +41,11 @@ export class ConfigService {
     await this.context.secrets.delete(this.secretKey(provider));
   }
 
+  async setModel(model: string): Promise<void> {
+    const target = vscode.workspace.workspaceFolders?.length ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+    await vscode.workspace.getConfiguration("kodo").update("model", model.trim(), target);
+  }
+
   getBaseUrl(provider = this.config.provider): string {
     if (this.config.baseUrl) {
       return this.config.baseUrl.trim().replace(/\/+$/, "");

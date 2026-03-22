@@ -5,6 +5,7 @@ import type { ExtToWebMsg } from "../types/messages";
 import type { ChatMessage } from "../types/llm";
 import { CodebaseIndexer } from "../services/indexer/CodebaseIndexer";
 import { LLMClientFactory } from "../services/llm/LLMClientFactory";
+import { rewriteUnsupportedToolMarkupResponse } from "../utils/ChatSafety";
 import { PromptBuilder } from "../utils/PromptBuilder";
 import { relativeWorkspacePath, selectionToString } from "../utils/FileUtils";
 
@@ -28,6 +29,7 @@ export class ChatController {
     const history = this.getHistory();
     const resolvedAttachments = await this.indexer.readAttachments(unique([...attachments, ...extractMentions(content)]));
     const retrieved = await this.indexer.search(content, activeFile, 4000);
+    const workspaceFilePaths = await this.indexer.getWorkspaceFilePaths(150);
 
     this.cancelActiveStream();
     this.activeAbort = new AbortController();
@@ -39,6 +41,7 @@ export class ChatController {
         selection: selected,
         attachments: resolvedAttachments,
         retrieved,
+        workspaceFilePaths,
         history,
         maxContextTokens: 6000
       },
@@ -66,7 +69,12 @@ export class ChatController {
         }
       }
 
-      this.pushHistory({ role: "assistant", content: assistant });
+      const normalizedAssistant = rewriteUnsupportedToolMarkupResponse(assistant, workspaceFilePaths);
+      if (normalizedAssistant !== assistant) {
+        post({ type: "stream_replace", messageId, content: normalizedAssistant });
+      }
+
+      this.pushHistory({ role: "assistant", content: normalizedAssistant });
       post({ type: "stream_done", messageId });
       post({
         type: "context_info",

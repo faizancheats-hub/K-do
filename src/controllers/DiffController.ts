@@ -1,10 +1,13 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import type { DiffFile } from "../types/agent";
+import type { AgentStep, DiffFile, FileChangeAction } from "../types/agent";
 
 export class DiffController {
   private readonly pending = new Map<string, DiffFile>();
+  private readonly activeWriteSteps = new Map<string, { path: string; action: FileChangeAction }>();
+  private readonly updates = new vscode.EventEmitter<void>();
+  readonly onDidChange = this.updates.event;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -13,10 +16,15 @@ export class DiffController {
     for (const file of files) {
       this.pending.set(file.id, file);
     }
+    this.fireDidChange();
   }
 
   list(): DiffFile[] {
     return [...this.pending.values()];
+  }
+
+  listActiveWrites(): Array<{ path: string; action: FileChangeAction }> {
+    return [...new Map([...this.activeWriteSteps.values()].map((item) => [item.path, item])).values()];
   }
 
   async preview(fileId?: string): Promise<void> {
@@ -36,10 +44,12 @@ export class DiffController {
     }
     await this.applyDiff(diff);
     this.pending.delete(fileId);
+    this.fireDidChange();
   }
 
   async reject(fileId: string): Promise<void> {
     this.pending.delete(fileId);
+    this.fireDidChange();
   }
 
   async acceptAll(): Promise<void> {
@@ -47,10 +57,40 @@ export class DiffController {
       await this.applyDiff(file);
     }
     this.pending.clear();
+    this.fireDidChange();
   }
 
   rejectAll(): void {
     this.pending.clear();
+    this.fireDidChange();
+  }
+
+  syncAgentStep(step: AgentStep): void {
+    const action = stepAction(step.toolName);
+    if (!action) {
+      return;
+    }
+
+    const path = stepPath(step);
+    if (!path) {
+      return;
+    }
+
+    if (step.status === "running") {
+      this.activeWriteSteps.set(step.id, { path, action });
+    } else {
+      this.activeWriteSteps.delete(step.id);
+    }
+
+    this.fireDidChange();
+  }
+
+  clearActiveWrites(): void {
+    if (this.activeWriteSteps.size === 0) {
+      return;
+    }
+    this.activeWriteSteps.clear();
+    this.fireDidChange();
   }
 
   private async applyDiff(diff: DiffFile): Promise<void> {
@@ -99,6 +139,10 @@ export class DiffController {
       right: vscode.Uri.file(rightPath)
     };
   }
+
+  private fireDidChange(): void {
+    this.updates.fire();
+  }
 }
 
 function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
@@ -107,4 +151,22 @@ function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
   }
   const lastLine = document.lineAt(document.lineCount - 1);
   return new vscode.Range(new vscode.Position(0, 0), lastLine.range.end);
+}
+
+function stepAction(toolName: string | undefined): FileChangeAction | undefined {
+  switch (toolName) {
+    case "create_file":
+      return "create";
+    case "delete_file":
+      return "delete";
+    case "write_file":
+      return "update";
+    default:
+      return undefined;
+  }
+}
+
+function stepPath(step: AgentStep): string | undefined {
+  const candidate = step.input?.path ?? step.input?.file;
+  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
 }

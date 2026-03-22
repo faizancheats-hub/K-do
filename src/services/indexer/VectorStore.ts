@@ -34,6 +34,10 @@ export class VectorStore {
     return [...this.byPath.values()].reduce((sum, chunks) => sum + chunks.length, 0);
   }
 
+  paths(): string[] {
+    return [...this.byPath.keys()].sort((left, right) => left.localeCompare(right));
+  }
+
   allChunks(): ContextChunk[] {
     return [...this.byPath.values()].flatMap((items) => items.map((item) => item.chunk));
   }

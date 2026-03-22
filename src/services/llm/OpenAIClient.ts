@@ -8,6 +8,14 @@ interface OpenAIMessage {
   content: string;
   tool_call_id?: string;
   name?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
 }
 
 interface OpenAICompletionPayload {
@@ -156,7 +164,15 @@ export class OpenAIClient implements LLMClient {
       role: message.role,
       content: message.content,
       tool_call_id: message.toolCallId,
-      name: message.name
+      name: message.name,
+      tool_calls: message.toolCalls?.map((toolCall) => ({
+        id: toolCall.id,
+        type: "function",
+        function: {
+          name: toolCall.name,
+          arguments: JSON.stringify(toolCall.arguments)
+        }
+      }))
     };
   }
 

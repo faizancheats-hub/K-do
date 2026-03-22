@@ -19,16 +19,22 @@ export class CodebaseIndexer implements vscode.Disposable {
   private readonly embeddingService: EmbeddingService;
   private readonly retrieval: RetrievalEngine;
   private readonly statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10);
+  private readonly updates = new vscode.EventEmitter<void>();
+  readonly onDidUpdate = this.updates.event;
   private readonly recentFiles: string[] = [];
   private readonly debouncedReindex = debounce((uri: vscode.Uri) => {
     void this.indexFile(uri);
   }, 1500);
+  private readonly debouncedNotify = debounce(() => {
+    this.updates.fire();
+  }, 250);
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly config: ConfigService,
     clientFactory: LLMClientFactory
   ) {
+    const watcher = vscode.workspace.createFileSystemWatcher("**/*");
     this.embeddingService = new EmbeddingService(config, clientFactory);
     this.retrieval = new RetrievalEngine(this.vectorStore);
     this.statusBar.text = "Kodo: Index idle";
@@ -36,11 +42,35 @@ export class CodebaseIndexer implements vscode.Disposable {
 
     this.disposables.push(
       this.statusBar,
+      watcher,
       vscode.workspace.onDidChangeTextDocument((event) => this.debouncedReindex(event.document.uri)),
+      vscode.workspace.onDidSaveTextDocument((document) => {
+        void this.indexFile(document.uri);
+      }),
+      watcher.onDidCreate((uri) => {
+        void this.indexFile(uri);
+      }),
+      watcher.onDidChange((uri) => this.debouncedReindex(uri)),
+      watcher.onDidDelete((uri) => this.removeFile(uri)),
+      vscode.workspace.onDidCreateFiles((event) => {
+        event.files.forEach((uri) => {
+          void this.indexFile(uri);
+        });
+      }),
+      vscode.workspace.onDidDeleteFiles((event) => {
+        event.files.forEach((uri) => this.removeFile(uri));
+      }),
+      vscode.workspace.onDidRenameFiles((event) => {
+        for (const file of event.files) {
+          this.removeFile(file.oldUri);
+          void this.indexFile(file.newUri);
+        }
+      }),
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (editor) {
           this.trackRecent(relativeWorkspacePath(editor.document.uri.fsPath));
         }
+        this.scheduleUpdate();
       })
     );
   }
@@ -66,10 +96,16 @@ export class CodebaseIndexer implements vscode.Disposable {
       }
     }
     this.statusBar.text = `Kodo: Indexed ${this.vectorStore.countFiles()} files`;
+    this.scheduleUpdate();
   }
 
   async indexFile(uri: vscode.Uri): Promise<void> {
     try {
+      if (!(await this.fileWalker.isIndexable(uri))) {
+        this.removeFile(uri);
+        return;
+      }
+
       const stat = await vscode.workspace.fs.stat(uri);
       if (stat.size > 512_000) {
         return;
@@ -85,6 +121,7 @@ export class CodebaseIndexer implements vscode.Disposable {
       const vectors = await this.embeddingService.embedTexts(chunks.map((chunk) => chunk.content));
       this.vectorStore.upsert(relativePath, chunks, vectors);
       this.trackRecent(relativePath);
+      this.scheduleUpdate();
     } catch (error) {
       Logger.warn(`Failed to index ${uri.fsPath}: ${String(error)}`);
     }
@@ -126,6 +163,19 @@ export class CodebaseIndexer implements vscode.Disposable {
     return attachments;
   }
 
+  async getWorkspaceFilePaths(limit = 200): Promise<string[]> {
+    const indexed = this.vectorStore.paths();
+    if (indexed.length) {
+      return indexed.slice(0, limit);
+    }
+
+    const files = await this.fileWalker.listWorkspaceFiles();
+    return files
+      .map((uri) => relativeWorkspacePath(uri.fsPath))
+      .sort((left, right) => left.localeCompare(right))
+      .slice(0, limit);
+  }
+
   getSummary(): ContextSummary {
     const editor = vscode.window.activeTextEditor;
     return {
@@ -133,7 +183,10 @@ export class CodebaseIndexer implements vscode.Disposable {
       selectedLines: selectionToString(editor),
       attachedFiles: [],
       indexedFiles: this.vectorStore.countFiles(),
-      indexedChunks: this.vectorStore.countChunks()
+      indexedChunks: this.vectorStore.countChunks(),
+      workspaceFiles: [],
+      model: "",
+      provider: ""
     };
   }
 
@@ -160,5 +213,18 @@ export class CodebaseIndexer implements vscode.Disposable {
     }
     this.recentFiles.unshift(path);
     this.recentFiles.splice(20);
+  }
+
+  private removeFile(uri: vscode.Uri): void {
+    const relativePath = relativeWorkspacePath(uri.fsPath);
+    if (!relativePath || relativePath.startsWith("..")) {
+      return;
+    }
+    this.vectorStore.remove(relativePath);
+    this.scheduleUpdate();
+  }
+
+  private scheduleUpdate(): void {
+    this.debouncedNotify();
   }
 }

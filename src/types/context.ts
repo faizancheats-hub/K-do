@@ -30,4 +30,7 @@ export interface ContextSummary {
   attachedFiles: string[];
   indexedFiles: number;
   indexedChunks: number;
+  workspaceFiles: string[];
+  model: string;
+  provider: string;
 }

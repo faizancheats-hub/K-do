@@ -1,11 +1,15 @@
 .github/**
 .memory/**
+.vscode/**
 docs/**
 scripts/**
 tests/**
 node_modules/**
 src/**
 webview/src/**
+Kodo_PRD.docx
+READMEfor kiro.md
+.gitignore
 tsconfig.json
 esbuild.config.mjs
 vitest.config.ts

@@ -13,6 +13,7 @@ export interface PromptContext {
   selection?: string | null;
   retrieved?: ContextChunk[];
   attachments?: Array<{ path: string; content: string }>;
+  workspaceFilePaths?: string[];
   history?: ChatMessage[];
   maxContextTokens?: number;
 }
@@ -56,6 +57,7 @@ export class PromptBuilder {
 
   buildChatRequest(context: PromptContext, model: string, maxTokens: number, signal?: AbortSignal): CompletionRequest {
     const attachments = context.attachments ?? [];
+    const workspaceFilePaths = context.workspaceFilePaths ?? [];
     const budget = context.maxContextTokens ?? 6000;
     const retrieved = this.trimmer.trimToBudget(context.retrieved ?? [], Math.floor(budget * 0.7));
     const attachmentBlocks = attachments.map((file) => `@${file.path}\n${file.content}`);
@@ -64,6 +66,9 @@ export class PromptBuilder {
       "You are Kodo, a precise AI coding assistant for VS Code.",
       "Give actionable answers grounded in the provided workspace context.",
       "If you propose code, prefer complete snippets that can be applied directly.",
+      "Chat mode does not execute tools. Never claim you ran commands, listed files, opened files, or saw command output unless that content is explicitly included in the prompt.",
+      "Never emit pseudo-tool markup or XML tags such as <list_files>, <read_file>, or similar tool-call syntax.",
+      "If you need more context, ask the user to attach files or mention them with @relative/path.",
       context.activeFile ? `Active file: ${context.activeFile}` : "",
       context.selection ? `Selected code:\n${context.selection}` : ""
     ].filter(Boolean);
@@ -75,7 +80,10 @@ export class PromptBuilder {
       ...retrieved.map((chunk) => `[${chunk.path}:${chunk.startLine}-${chunk.endLine}]\n${chunk.content}`),
       "",
       "Attached files:",
-      ...attachmentBlocks
+      ...attachmentBlocks,
+      "",
+      "Workspace file inventory:",
+      ...(workspaceFilePaths.length ? workspaceFilePaths : ["(not available yet)"])
     ].filter(Boolean);
 
     return {
@@ -127,6 +135,32 @@ export class PromptBuilder {
           `Plan: ${plan.steps.join(" | ")}`,
           "",
           ...fileBlocks
+        ].join("\n")
+      }
+    ];
+  }
+
+  buildAgentExecutionPrompt(task: string, plan: AgentPlan, relevantFiles: string[]): ChatMessage[] {
+    return [
+      {
+        role: "system",
+        content: [
+          "You are Kodo's multi-file editing agent inside VS Code.",
+          "You have access to function tools and should use them instead of pretending to inspect files.",
+          "Use tools to discover files, read code, search the codebase, and stage edits.",
+          "Do not emit XML or pseudo-tool markup such as <list_files> or <read_file>.",
+          "Use create_file, write_file, and delete_file only to stage final diffs. Do not describe edits without calling those tools.",
+          "When you have finished staging all needed changes, respond with a concise final summary and no tool calls."
+        ].join("\n")
+      },
+      {
+        role: "user",
+        content: [
+          `Task: ${task}`,
+          `Plan: ${plan.steps.join(" | ") || "Inspect files and prepare a staged diff."}`,
+          "",
+          "Relevant starting files:",
+          ...(relevantFiles.length ? relevantFiles : ["(none yet)"])
         ].join("\n")
       }
     ];

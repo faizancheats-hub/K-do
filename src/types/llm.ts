@@ -1,22 +1,23 @@
 export type ChatRole = "system" | "user" | "assistant" | "tool";
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface ChatMessage {
   role: ChatRole;
   content: string;
   name?: string;
   toolCallId?: string;
+  toolCalls?: ToolCall[];
 }
 
 export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-}
-
-export interface ToolCall {
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
 }
 
 export interface TokenUsage {
@@ -33,7 +34,7 @@ export interface CompletionRequest {
   stop?: string[];
   signal?: AbortSignal;
   tools?: ToolDefinition[];
-  toolChoice?: "auto" | "none";
+  toolChoice?: "auto" | "none" | "required";
   metadata?: Record<string, unknown>;
 }
 

@@ -2,11 +2,15 @@
   "name": "kodo",
   "displayName": "Kodo - The Way of Clean Code",
   "description": "AI-powered coding assistant for VS Code with chat, inline completions, codebase awareness, and agentic editing.",
-  "version": "1.0.0",
+  "version": "1.0.10",
   "publisher": "firda",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/faizancheats-hub/K-do.git"
+  },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.110.0"
   },
   "categories": [
     "AI",
@@ -19,16 +23,30 @@
     "onCommand:kodo.explainSelected",
     "onCommand:kodo.refactorProject",
     "onCommand:kodo.generateFeature",
-    "onView:kodo.chat"
+    "onView:kodo.chat",
+    "onView:kodo.changes"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kodo",
+          "title": "Kodo",
+          "icon": "media/kodo.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "kodo": [
         {
           "id": "kodo.chat",
           "name": "AI Chat",
           "type": "webview"
+        },
+        {
+          "id": "kodo.changes",
+          "name": "Changes"
         }
       ]
     },
@@ -72,8 +90,43 @@
       {
         "command": "kodo.openChatWithPrompt",
         "title": "Kodo: Open Chat With Prompt"
+      },
+      {
+        "command": "kodo.openChangeDiff",
+        "title": "Kodo: Open Change Diff"
+      },
+      {
+        "command": "kodo.acceptAllChanges",
+        "title": "Kodo: Accept All Changes"
+      },
+      {
+        "command": "kodo.rejectAllChanges",
+        "title": "Kodo: Reject All Changes"
+      },
+      {
+        "command": "kodo.clearAllChanges",
+        "title": "Kodo: Clear All Changes"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "kodo.acceptAllChanges",
+          "when": "view == kodo.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kodo.rejectAllChanges",
+          "when": "view == kodo.changes",
+          "group": "navigation@2"
+        },
+        {
+          "command": "kodo.clearAllChanges",
+          "when": "view == kodo.changes",
+          "group": "navigation@3"
+        }
+      ]
+    },
     "configuration": {
       "title": "Kodo",
       "properties": {

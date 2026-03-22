@@ -38,6 +38,10 @@ export class FileWalker {
     return workspaceFiles.filter((uri) => this.isAllowed(uri, ignorePatterns));
   }
 
+  async isIndexable(uri: vscode.Uri): Promise<boolean> {
+    return this.isAllowed(uri, await this.readIgnorePatterns());
+  }
+
   private isAllowed(uri: vscode.Uri, ignorePatterns: RegExp[]): boolean {
     const relative = normalizePath(relativeWorkspacePath(uri.fsPath));
     if (!relative || DEFAULT_EXCLUDES.some((pattern) => pattern.test(relative))) {
